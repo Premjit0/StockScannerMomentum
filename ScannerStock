@@ -10,8 +10,7 @@ import pandas as pd
 import ta
 import datetime
 
-# Define the list of stocks using ticker symbols known to have valid data on Yahoo Finance.
-# Problematic tickers (e.g., delisted or missing timezone) have been removed.
+# Define the list of stocks (only those with valid data on Yahoo Finance).
 stock_tickers = {
     "Bharat Electronics Ltd.": "BEL.NS",
     "Bharti Airtel Ltd.": "BHARTIARTL.NS",
@@ -46,52 +45,60 @@ time_frame = "1d"  # Use "1d" for daily or "1wk" for weekly
 # Set indicator thresholds.
 adx_threshold = 40    # ADX threshold value.
 wpr_threshold = -25   # Williams %R threshold value.
-near_threshold = 20    # Allowed deviation for "near" condition.
+
+# Set separate near thresholds for Condition 2.
+adx_near_threshold = 10
+wpr_near_threshold = 10
 
 # Prepare lists to store the stocks meeting each condition.
 condition1_stocks = []
 condition2_stocks = []
+condition3_stocks = []
 
 for name, ticker in stock_tickers.items():
     try:
-        # Download historical data; progress=False removes progress bar output.
+        # Download historical data (suppress progress output).
         data = yf.download(ticker, start=start_date, end=end_date, interval=time_frame, progress=False)
         if data.empty:
-            # If no data is returned, skip this ticker.
             continue
         
-        # Ensure the high, low, and close columns are 1-dimensional.
+        # Ensure columns are 1-dimensional.
         high = data["High"].squeeze()
         low = data["Low"].squeeze()
         close = data["Close"].squeeze()
         
-        # Calculate ADX and Williams %R using a 14-period window.
+        # Calculate ADX and Williams %R (using 14-period windows).
         adx_series = ta.trend.ADXIndicator(high=high, low=low, close=close, window=14).adx()
         wpr_series = ta.momentum.WilliamsRIndicator(high=high, low=low, close=close, lbp=14).williams_r()
         data["ADX"] = adx_series
         data["Williams_%R"] = wpr_series
         
-        # Drop NaN values from the computed indicators.
+        # Ensure at least one valid indicator value exists.
         valid_adx = data["ADX"].dropna()
         valid_wpr = data["Williams_%R"].dropna()
         if valid_adx.empty or valid_wpr.empty:
             continue
         
-        # Extract the latest valid indicator values and convert to floats.
+        # Extract the latest valid indicator values.
         adx_val = float(valid_adx.iloc[-1])
         wpr_val = float(valid_wpr.iloc[-1])
         
         # Check Condition 1: ADX > 40 and Williams %R > -25.
         if (adx_val > adx_threshold) and (wpr_val > wpr_threshold):
             condition1_stocks.append(name)
-        # Check Condition 2: Both indicators are within ±near_threshold of their thresholds.
-        elif (abs(adx_val - adx_threshold) <= near_threshold) and (abs(wpr_val - wpr_threshold) <= near_threshold):
+        # Check Condition 2: Both indicators are within the specified near thresholds.
+        elif (abs(adx_val - adx_threshold) <= adx_near_threshold) and (abs(wpr_val - wpr_threshold) <= wpr_near_threshold):
             condition2_stocks.append(name)
+        
+         # Check Condition 3: Either indicator is within the specified near thresholds.
+        elif (abs(adx_val - adx_threshold) <= adx_near_threshold) or (abs(wpr_val - wpr_threshold) <= wpr_near_threshold):
+            condition3_stocks.append(name)
+            
     except Exception:
         # Silently skip any ticker that raises an error.
         continue
 
-# Output the results without any error messages.
+# Print the results.
 print("Stocks meeting Condition 1 (ADX > 40 and Williams %R > -25):")
 if condition1_stocks:
     for stock in condition1_stocks:
@@ -99,9 +106,17 @@ if condition1_stocks:
 else:
     print("None of the stocks meet Condition 1.")
 
-print("\nStocks meeting Condition 2 (Indicators near ADX 40 and Williams %R -25 within ±{}):".format(near_threshold))
+print("\nStocks meeting Condition 2 (Indicators near ADX 40 and Williams %R -25 within ADX = ±{} and Williams %R = ±{}):".format(adx_near_threshold, wpr_near_threshold))
 if condition2_stocks:
     for stock in condition2_stocks:
         print("-", stock)
 else:
     print("None of the stocks meet Condition 2.")
+
+print("\nStocks meeting Condition 3 (Indicators near ADX 40 or Williams %R -25 within ADX = ±{} and Williams %R = ±{}):".format(adx_near_threshold, wpr_near_threshold))
+if condition3_stocks:
+    for stock in condition3_stocks:
+        print("-", stock)
+else:
+    print("None of the stocks meet Condition 3.")
+
